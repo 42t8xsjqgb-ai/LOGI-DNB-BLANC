@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LOGI-DNB BLANC V15 - Gestion Complète</title>
+    <title>LOGI-DNB BLANC V16 - Gestion Complète</title>
     
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.0/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    
     <script>
         tailwind.config = {
             theme: {
@@ -50,7 +51,8 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        const APP_VERSION = "15.0";
+        const APP_VERSION = "16.0";
+        const STORAGE_KEY_V16 = 'PERDIRFORMANCE_DNB_DATA_V16';
         const STORAGE_KEY_V15 = 'PERDIRFORMANCE_DNB_DATA_V15';
         const STORAGE_KEY_V14 = 'PERDIRFORMANCE_DNB_DATA_V14';
         const STORAGE_KEY_V13 = 'PERDIRFORMANCE_DNB_DATA_V13';
@@ -152,7 +154,6 @@
             return ext;
         };
 
-        // Icons
         const IconBase = ({ children, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>;
         const School = (props) => <IconBase {...props}><path d="m4 6 8-4 8 4" /><path d="m18 10 4 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8l4-2" /><path d="M14 22v-4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v4" /><path d="M18 5v17" /><path d="M6 5v17" /><circle cx="12" cy="9" r="2" /></IconBase>;
         const Users = (props) => <IconBase {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></IconBase>;
@@ -330,7 +331,7 @@
             );
         };
 
-        const SecretariatPanel = ({ subjects, rooms, teachers, assignments, onAssignmentChange }) => {
+        const SecretariatPanel = ({ subjects, rooms, teachers, assignments, onAssignmentChange, secretariatMode, setSecretariatMode, secretariatTextBlanc, setSecretariatTextBlanc, secretariatTextFinal, setSecretariatTextFinal }) => {
             const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.id || null);
             const currentSubject = subjects.find(s => s.id === parseInt(selectedSubjectId));
             const currentAssignment = assignments[currentSubject?.id] || { roomId: "", teacherIds: [] };
@@ -344,6 +345,23 @@
                     <Card title="Gestion du Secrétariat d'Examen" className="border-l-4 border-l-purple-500">
                         <div className="flex flex-col md:flex-row gap-6">
                             <div className="w-full md:w-1/3 space-y-4">
+                                <div className="bg-purple-50/50 p-4 rounded-lg border border-purple-100">
+                                    <label className="block text-sm font-bold text-purple-900 mb-2">Type d'examen :</label>
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="flex items-center cursor-pointer"><input type="radio" name="secretariatMode" checked={secretariatMode === 'blanc'} onChange={() => setSecretariatMode('blanc')} className="form-radio text-purple-600 focus:ring-purple-500 h-4 w-4" /><span className="ml-2 text-sm text-slate-700 font-medium">Examen blanc</span></label>
+                                            <div className="ml-6 mt-1">
+                                                <input type="text" value={secretariatTextBlanc} onChange={(e) => setSecretariatTextBlanc(e.target.value)} disabled={secretariatMode !== 'blanc'} className="w-full p-1.5 text-xs border border-purple-200 rounded focus:ring-1 focus:ring-purple-300 outline-none disabled:bg-slate-50 disabled:text-slate-400" placeholder="Ex: A la fin de l'épreuve" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="flex items-center cursor-pointer"><input type="radio" name="secretariatMode" checked={secretariatMode === 'final'} onChange={() => setSecretariatMode('final')} className="form-radio text-purple-600 focus:ring-purple-500 h-4 w-4" /><span className="ml-2 text-sm text-slate-700 font-medium">Examen final</span></label>
+                                            <div className="ml-6 mt-1">
+                                                <input type="text" value={secretariatTextFinal} onChange={(e) => setSecretariatTextFinal(e.target.value)} disabled={secretariatMode !== 'final'} className="w-full p-1.5 text-xs border border-purple-200 rounded focus:ring-1 focus:ring-purple-300 outline-none disabled:bg-slate-50 disabled:text-slate-400" placeholder="Ex: Permanent" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                 <label className="block text-sm font-medium text-slate-700">Choisir l'épreuve :</label>
                                 <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
                                     {subjects.map(sub => (
@@ -568,7 +586,7 @@
 
         const HelpPanel = () => (
             <div className="space-y-6 animate-fade-in">
-                <Card title="Mode d'Emploi - LOGI-DNB BLANC V15">
+                <Card title="Mode d'Emploi - LOGI-DNB BLANC V16">
                     <div className="text-slate-600 space-y-6">
                         <p className="text-lg font-light text-slate-800">Bienvenue dans l'outil d'organisation d'examen blanc.</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -588,6 +606,9 @@
             const [activeTab, setActiveTab] = useState('config');
             const [isAnonymityLocked, setIsAnonymityLocked] = useState(true); 
             const [surveillanceMode, setSurveillanceMode] = useState('with_rotation'); 
+            const [secretariatMode, setSecretariatMode] = useState('blanc');
+            const [secretariatTextBlanc, setSecretariatTextBlanc] = useState("A la fin de l'épreuve");
+            const [secretariatTextFinal, setSecretariatTextFinal] = useState("Permanent");
             const [selectedCorrectionSubject, setSelectedCorrectionSubject] = useState(null);
             const [selectedTeachersForCorrection, setSelectedTeachersForCorrection] = useState([]);
             const [forceAllTeachersCorrection, setForceAllTeachersCorrection] = useState(false);
@@ -625,11 +646,15 @@
             }, []);
 
             useEffect(() => {
-                const savedDataV15 = localStorage.getItem(STORAGE_KEY_V15);
-                if (savedDataV15) { loadData(JSON.parse(savedDataV15), "V15"); }
+                const savedDataV16 = localStorage.getItem(STORAGE_KEY_V16);
+                if (savedDataV16) { loadData(JSON.parse(savedDataV16), "V16"); }
                 else {
-                    const savedDataV14 = localStorage.getItem(STORAGE_KEY_V14) || localStorage.getItem(STORAGE_KEY_V13);
-                    if (savedDataV14) { loadData(JSON.parse(savedDataV14), "Version antérieure"); showNotification("Données migrées vers la version 15.", "success"); }
+                    const savedDataV15 = localStorage.getItem(STORAGE_KEY_V15);
+                    if (savedDataV15) { loadData(JSON.parse(savedDataV15), "Version antérieure"); showNotification("Données migrées vers la version 16.", "success"); }
+                    else {
+                        const savedDataV14 = localStorage.getItem(STORAGE_KEY_V14) || localStorage.getItem(STORAGE_KEY_V13);
+                        if (savedDataV14) { loadData(JSON.parse(savedDataV14), "Version antérieure"); showNotification("Données migrées vers la version 16.", "success"); }
+                    }
                 }
                 setIsDataLoaded(true);
             }, []);
@@ -651,6 +676,9 @@
                     }
                     setTeacherAssignments(data.teacherAssignments || {}); setSurveillanceAssignments(data.surveillanceAssignments || {}); setSecretariatAssignments(data.secretariatAssignments || {}); setCorridorAssignments(data.corridorAssignments || {}); setVerifierAssignments(data.verifierAssignments || {}); setReserveAssignments(data.reserveAssignments || {});
                     if (data.surveillanceMode) setSurveillanceMode(data.surveillanceMode);
+                    if (data.secretariatMode) setSecretariatMode(data.secretariatMode);
+                    if (data.secretariatTextBlanc) setSecretariatTextBlanc(data.secretariatTextBlanc);
+                    if (data.secretariatTextFinal) setSecretariatTextFinal(data.secretariatTextFinal);
                     if (data.isAnonymityLocked !== undefined) setIsAnonymityLocked(data.isAnonymityLocked);
                     
                     const loadedTemplates = data.docTemplates || {}; 
@@ -668,8 +696,8 @@
                 if (!isDataLoaded) return;
                 
                 try {
-                    const dataToSave = { version: APP_VERSION, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, docTemplates, isAnonymityLocked, timestamp: new Date().toISOString() };
-                    localStorage.setItem(STORAGE_KEY_V15, JSON.stringify(dataToSave));
+                    const dataToSave = { version: APP_VERSION, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, secretariatMode, secretariatTextBlanc, secretariatTextFinal, docTemplates, isAnonymityLocked, timestamp: new Date().toISOString() };
+                    localStorage.setItem(STORAGE_KEY_V16, JSON.stringify(dataToSave));
                     setLastSaved(new Date());
                 } catch (e) {
                     console.error("Erreur de sauvegarde locale :", e);
@@ -677,7 +705,7 @@
                         showNotification("Erreur de sauvegarde : Espace saturé. Réduisez la taille du logo.", "error");
                     }
                 }
-            }, [isDataLoaded, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, docTemplates, isAnonymityLocked]);
+            }, [isDataLoaded, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, secretariatMode, secretariatTextBlanc, secretariatTextFinal, docTemplates, isAnonymityLocked]);
 
             const getRoomOccupancy = (roomId) => students.filter(s => s.roomId === roomId).length;
             const openModal = (title, message, action) => setModalConfig({ isOpen: true, title, message, onConfirm: action });
@@ -995,8 +1023,8 @@
             const resetDistribution = () => { openModal("Réinitialisation", "Vider les salles ?", () => { setStudents(prev => prev.map(s => ({ ...s, roomId: null }))); showNotification("Salles vidées !"); }); };
             
             const handleSaveWork = () => {
-                const defaultName = `dnb_backup_v15_${new Date().toISOString().slice(0,10)}`;
-                setInputModalConfig({ isOpen: true, title: "Sauvegarder", message: "Nommez votre fichier :", defaultValue: defaultName, onConfirm: (fileName) => { const finalName = fileName.trim() ? (fileName.endsWith('.json') ? fileName : `${fileName}.json`) : `${defaultName}.json`; const data = { version: APP_VERSION, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, docTemplates, isAnonymityLocked, timestamp: new Date().toISOString() }; const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = finalName; document.body.appendChild(link); link.click(); document.body.removeChild(link); showNotification(`Sauvegardé : ${finalName}`, "success"); closeInputModal(); } });
+                const defaultName = `dnb_backup_v16_${new Date().toISOString().slice(0,10)}`;
+                setInputModalConfig({ isOpen: true, title: "Sauvegarder", message: "Nommez votre fichier :", defaultValue: defaultName, onConfirm: (fileName) => { const finalName = fileName.trim() ? (fileName.endsWith('.json') ? fileName : `${fileName}.json`) : `${defaultName}.json`; const data = { version: APP_VERSION, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, secretariatMode, secretariatTextBlanc, secretariatTextFinal, docTemplates, isAnonymityLocked, timestamp: new Date().toISOString() }; const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = finalName; document.body.appendChild(link); link.click(); document.body.removeChild(link); showNotification(`Sauvegardé : ${finalName}`, "success"); closeInputModal(); } });
             };
 
             const handleLoadWork = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => { try { const data = JSON.parse(evt.target.result); loadData(data, "Fichier"); } catch (err) { showNotification("Erreur lecture fichier", "error"); } finally { e.target.value = ''; } }; reader.readAsText(file); };
@@ -1191,7 +1219,11 @@
                         if (assign && assign.teacherIds) {
                             assign.teacherIds.forEach(tid => {
                                 if (!assignmentsByTeacher[tid]) { const t = teachers.find(tea => tea.id === tid); if (t) assignmentsByTeacher[tid] = { info: t, missions: [] }; }
-                                if (assignmentsByTeacher[tid]) { const roomName = rooms.find(r => r.id === assign.roomId)?.name || "Non définie"; assignmentsByTeacher[tid].missions.push({ date: sub.date, subject: sub.name, room: roomName, time: sub.time }); }
+                                if (assignmentsByTeacher[tid]) { 
+                                    const roomName = rooms.find(r => r.id === assign.roomId)?.name || "Non définie"; 
+                                    const displayTime = secretariatMode === 'blanc' ? (secretariatTextBlanc || "A la fin de l'épreuve") : (secretariatTextFinal || "Permanent");
+                                    assignmentsByTeacher[tid].missions.push({ date: sub.date, subject: sub.name, room: roomName, time: displayTime }); 
+                                }
                             });
                         }
                     });
@@ -1205,7 +1237,7 @@
                         y = printMultiLineText(tpl.intro, 15, y, pageWidth - 30, 5, 20); y += 3;
                         sortChronologically(data.missions);
                         const tableBody = data.missions.map(m => [m.date, m.subject, m.time, m.room]);
-                        doc.autoTable({ startY: y, head: [['Date', 'Epreuve', 'Horaire Epreuve', 'Lieu (Salle)']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] } });
+                        doc.autoTable({ startY: y, head: [['Date', 'Epreuve', 'Horaire Epreuve', 'Lieu (Salle)']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] }, columnStyles: { 0: { cellWidth: 48 }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 35 }, 3: { cellWidth: 30, halign: 'center', fontStyle: 'bold' } } });
                         let finalY = doc.lastAutoTable.finalY + 8; doc.setFontSize(10); doc.setFont("helvetica", "bold"); 
                         if (finalY > pageHeight - 20) { doc.addPage(); finalY = 20; }
                         doc.text("MISSIONS :", 20, finalY); finalY += 6; doc.setFont("helvetica", "normal");
@@ -1238,7 +1270,7 @@
                         y = printMultiLineText(tpl.intro, 15, y, pageWidth - 30, 5, 20); y += 3;
                         sortChronologically(data.slots);
                         const tableBody = data.slots.map(s => [s.date, s.time, s.subject, s.place]);
-                        doc.autoTable({ startY: y, head: [['Date', 'Horaire Epreuve', 'Epreuve', 'Secteur / Couloir']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] } });
+                        doc.autoTable({ startY: y, head: [['Date', 'Horaire Epreuve', 'Epreuve', 'Secteur / Couloir']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] }, columnStyles: { 0: { cellWidth: 48 }, 1: { cellWidth: 35 }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 35, halign: 'center', fontStyle: 'bold' } } });
                         let finalY = doc.lastAutoTable.finalY + 8; doc.setFontSize(10); doc.setFont("helvetica", "bold"); 
                         if (finalY > pageHeight - 20) { doc.addPage(); finalY = 20; }
                         doc.text("CONSIGNES :", 20, finalY); finalY += 6; doc.setFont("helvetica", "normal");
@@ -1270,7 +1302,7 @@
                         y = printMultiLineText(tpl.intro, 15, y, pageWidth - 30, 5, 20); y += 3;
                         sortChronologically(data.slots);
                         const tableBody = data.slots.map(s => [s.date, s.time, s.subject, s.place]);
-                        doc.autoTable({ startY: y, head: [['Date', 'Horaire Epreuve', 'Epreuve', 'Salle']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] } });
+                        doc.autoTable({ startY: y, head: [['Date', 'Horaire Epreuve', 'Epreuve', 'Salle']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] }, columnStyles: { 0: { cellWidth: 48 }, 1: { cellWidth: 35 }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 30, halign: 'center', fontStyle: 'bold' } } });
                         let finalY = doc.lastAutoTable.finalY + 8; doc.setFontSize(10); doc.setFont("helvetica", "bold"); 
                         if (finalY > pageHeight - 20) { doc.addPage(); finalY = 20; }
                         doc.text("CONSIGNES :", 20, finalY); finalY += 6; doc.setFont("helvetica", "normal");
@@ -1302,7 +1334,7 @@
                         y = printMultiLineText(tpl.intro, 15, y, pageWidth - 30, 5, 20); y += 3;
                         sortChronologically(data.slots);
                         const tableBody = data.slots.map(s => [s.date, s.time, s.subject, s.place]);
-                        doc.autoTable({ startY: y, head: [['Date', 'Horaire Epreuve', 'Epreuve', 'Salle d\'attente']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] } });
+                        doc.autoTable({ startY: y, head: [['Date', 'Horaire Epreuve', 'Epreuve', 'Salle d\'attente']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] }, columnStyles: { 0: { cellWidth: 48 }, 1: { cellWidth: 35 }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 30, halign: 'center', fontStyle: 'bold' } } });
                         let finalY = doc.lastAutoTable.finalY + 8; doc.setFontSize(10); doc.setFont("helvetica", "bold"); 
                         if (finalY > pageHeight - 20) { doc.addPage(); finalY = 20; }
                         doc.text("CONSIGNES :", 20, finalY); finalY += 6; doc.setFont("helvetica", "normal");
@@ -1511,7 +1543,7 @@
                             const studentRoom = rooms.find(r => r.id === student.roomId); const roomName = studentRoom ? studentRoom.name : "NON AFFECTÉ";
                             const sortedSubjects = sortChronologically([...subjects]);
                             const tableData = sortedSubjects.map(sub => { const displayTime = (student.isTT && sub.timeTT) ? sub.timeTT : sub.time; const subLabel = (sub.disciplines && sub.disciplines.length > 0) ? `${sub.name}\n(${sub.disciplines.join(' - ')})` : sub.name; return [sub.date, displayTime, subLabel, roomName]; });
-                            doc.autoTable({ startY: y, head: [['Date', 'Horaire', 'Épreuve', 'Salle']], body: tableData, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [0, 0, 0] }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0, 0, 0], lineWidth: 0.1, textColor: [0, 0, 0] }, columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 35, fontStyle: 'bold' }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 40, halign: 'center', fontStyle: 'bold' } } });
+                            doc.autoTable({ startY: y, head: [['Date', 'Horaire', 'Épreuve', 'Salle']], body: tableData, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [0, 0, 0] }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0, 0, 0], lineWidth: 0.1, textColor: [0, 0, 0] }, columnStyles: { 0: { cellWidth: 48 }, 1: { cellWidth: 35, fontStyle: 'bold' }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 30, halign: 'center', fontStyle: 'bold' } } });
                             let finalY = doc.lastAutoTable.finalY + 8; doc.setFontSize(10); doc.setFont("helvetica", "bold"); if (finalY > pageHeight - 20) { doc.addPage(); finalY = 20; }
                             doc.text("CONSIGNES IMPORTANTES :", 15, finalY); doc.setFont("helvetica", "normal"); doc.setFontSize(9);
                             let lineY = finalY + 6; lineY = printMultiLineText(tpl.consignes, 15, lineY, pageWidth - 30, 4.5, 20);
@@ -1547,7 +1579,7 @@
                             doc.setFont("helvetica", "bold"); if (y > pageHeight - 20) { doc.addPage(); y = 20; } doc.text("Planning de vos surveillances :", 20, y); y += 5;
                             sortChronologically(data.slots);
                             const tableBody = data.slots.map(slot => [slot.date, slot.time, slot.subject, slot.room]);
-                            doc.autoTable({ startY: y, head: [['Date', 'Créneau', 'Épreuve', 'Salle']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, columnStyles: { 0: { cellWidth: 35 }, 1: { cellWidth: 40, fontStyle: 'bold' }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 30, halign: 'center', fontStyle: 'bold' } }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] } });
+                            doc.autoTable({ startY: y, head: [['Date', 'Créneau', 'Épreuve', 'Salle']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, columnStyles: { 0: { cellWidth: 48 }, 1: { cellWidth: 35, fontStyle: 'bold' }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 30, halign: 'center', fontStyle: 'bold' } }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] } });
                             let finalY = doc.lastAutoTable.finalY + 8; doc.setFontSize(10); doc.setFont("helvetica", "bold"); 
                             if (finalY > pageHeight - 20) { doc.addPage(); finalY = 20; }
                             doc.text("CONSIGNES DE SURVEILLANCE :", 20, finalY); doc.setFont("helvetica", "normal"); finalY += 6;
@@ -1579,7 +1611,7 @@
                             doc.setFont("helvetica", "bold"); if (y > pageHeight - 20) { doc.addPage(); y = 20; } doc.text("Planning d'accompagnement :", 20, y); y += 5;
                             sortChronologically(slots);
                             const tableBody = slots.map(slot => [slot.date, slot.time, `${slot.studentName}\n(${slot.studentClass})`, slot.subject, slot.room]);
-                            doc.autoTable({ startY: y, head: [['Date', 'Horaire', 'Élève', 'Épreuve', 'Salle']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] } });
+                            doc.autoTable({ startY: y, head: [['Date', 'Horaire', 'Élève', 'Épreuve', 'Salle']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] }, columnStyles: { 0: { cellWidth: 45 }, 1: { cellWidth: 25 }, 2: { cellWidth: 35 }, 3: { cellWidth: 'auto' }, 4: { cellWidth: 25, halign: 'center', fontStyle: 'bold' } } });
                             let finalY = doc.lastAutoTable.finalY + 8; addSignatureBottom(finalY);
                         });
                         doc.save("convocations_aesh.pdf");
@@ -1616,7 +1648,7 @@
                             
                             sortChronologically(slots);
                             const tableBody = slots.map(slot => [slot.date, slot.time, `${slot.studentName}\n(${slot.studentClass})`, slot.subject, slot.room]);
-                            doc.autoTable({ startY: y, head: [['Date', 'Horaire', 'Élève concerné', 'Épreuve', 'Salle']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] } });
+                            doc.autoTable({ startY: y, head: [['Date', 'Horaire', 'Élève concerné', 'Épreuve', 'Salle']], body: tableBody, theme: 'grid', headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 }, styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] }, columnStyles: { 0: { cellWidth: 45 }, 1: { cellWidth: 25 }, 2: { cellWidth: 35 }, 3: { cellWidth: 'auto' }, 4: { cellWidth: 25, halign: 'center', fontStyle: 'bold' } } });
                             
                             let finalY = doc.lastAutoTable.finalY + 8;
                             if (tpl.consignes) {
@@ -1693,7 +1725,10 @@
                             if (assign && assign.teacherIds) {
                                 const roomName = rooms.find(r => r.id === assign.roomId)?.name || "Secrétariat";
                                 assign.teacherIds.forEach(tid => {
-                                    if (tid && teacherMissions[tid]) teacherMissions[tid].missions.push({ role: "Secrétariat", subject: sub.name, date: sub.date, time: sub.time, place: roomName });
+                                    if (tid && teacherMissions[tid]) {
+                                        const displayTime = secretariatMode === 'blanc' ? (secretariatTextBlanc || "A la fin de l'épreuve") : (secretariatTextFinal || "Permanent");
+                                        teacherMissions[tid].missions.push({ role: "Secrétariat", subject: sub.name, date: sub.date, time: displayTime, place: roomName });
+                                    }
                                 });
                             }
                         });
@@ -1732,7 +1767,7 @@
                                 theme: 'grid',
                                 headStyles: { fillColor: [230, 230, 230], textColor: [0,0,0], fontStyle: 'bold', lineColor: [0,0,0], lineWidth: 0.1 },
                                 styles: { fontSize: 9, cellPadding: 2.5, valign: 'middle', lineColor: [0,0,0], lineWidth: 0.1, textColor: [0,0,0] },
-                                columnStyles: { 0: { cellWidth: 25 }, 1: { cellWidth: 30 }, 2: { cellWidth: 30, fontStyle: 'bold' }, 3: { cellWidth: 'auto' }, 4: { cellWidth: 40 } }
+                                columnStyles: { 0: { cellWidth: 45 }, 1: { cellWidth: 30 }, 2: { cellWidth: 25, fontStyle: 'bold' }, 3: { cellWidth: 'auto' }, 4: { cellWidth: 35, halign: 'center' } }
                             });
                             
                             let finalY = doc.lastAutoTable.finalY + 8;
@@ -2277,9 +2312,9 @@
                                 <h1 className="text-xl text-white flex items-center hidden sm:flex">
                                     <span className="text-cyan-200 font-extrabold tracking-tight">PERDIR</span><span className="font-light tracking-wide">FORMANCE</span>
                                     <span className="opacity-50 mx-3">|</span>
-                                    <span className="font-bold">LOGI-DNB BLANC V15</span>
+                                    <span className="font-bold">LOGI-DNB BLANC V16</span>
                                 </h1>
-                                <h1 className="text-xl font-bold text-white sm:hidden">LOGI-DNB V15</h1>
+                                <h1 className="text-xl font-bold text-white sm:hidden">LOGI-DNB V16</h1>
                             </div>
                             <div className="text-sm text-sky-100 hidden md:flex flex-col items-end">
                                 <div className="font-medium capitalize text-[13px]">
@@ -2318,12 +2353,12 @@
                         {activeTab === 'repartition' && renderRepartition()}
                         {activeTab === 'surveillance' && <SurveillancePanel subjects={subjects} rooms={rooms} teachers={teachers} students={students} assignments={surveillanceAssignments} onAssignmentChange={(k, v) => setSurveillanceAssignments(prev => ({...prev, [k]: v}))} schoolConfig={schoolConfig} mode={surveillanceMode} setMode={setSurveillanceMode} />}
                         {activeTab === 'annexes' && <AnnexesPanel subjects={subjects} rooms={rooms} teachers={teachers} corridorAssignments={corridorAssignments} verifierAssignments={verifierAssignments} reserveAssignments={reserveAssignments} onCorridorChange={(k, v) => setCorridorAssignments(prev => ({...prev, [k]: v}))} onVerifierChange={(k, v) => setVerifierAssignments(prev => ({...prev, [k]: v}))} onReserveChange={(k, v) => setReserveAssignments(prev => ({...prev, [k]: v}))} />}
-                        {activeTab === 'secretariat' && <SecretariatPanel subjects={subjects} rooms={rooms} teachers={teachers} assignments={secretariatAssignments} onAssignmentChange={(sid, data) => setSecretariatAssignments(prev => ({...prev, [sid]: data}))} />}
+                        {activeTab === 'secretariat' && <SecretariatPanel subjects={subjects} rooms={rooms} teachers={teachers} assignments={secretariatAssignments} onAssignmentChange={(sid, data) => setSecretariatAssignments(prev => ({...prev, [sid]: data}))} secretariatMode={secretariatMode} setSecretariatMode={setSecretariatMode} secretariatTextBlanc={secretariatTextBlanc} setSecretariatTextBlanc={setSecretariatTextBlanc} secretariatTextFinal={secretariatTextFinal} setSecretariatTextFinal={setSecretariatTextFinal} />}
                         {activeTab === 'correction' && renderCorrection()}
                         {activeTab === 'documents' && renderDocuments()}
                         {activeTab === 'help' && <HelpPanel />}
                     </main>
-                    <footer className="bg-white border-t py-8 text-center text-slate-400 text-sm">LOGI-DNB BLANC V15 proposé par Yannis CHRISTON à l'aide de l'IA Générative</footer>
+                    <footer className="bg-white border-t py-8 text-center text-slate-400 text-sm">LOGI-DNB BLANC V16 proposé par Yannis CHRISTON à l'aide de l'IA Générative</footer>
                 </div>
             );
         };
