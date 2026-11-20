@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LOGI-DNB BLANC V16 - Gestion Complète</title>
+    <title>LOGI-DNB BLANC V17 - Gestion Complète</title>
     
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
@@ -51,7 +51,8 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        const APP_VERSION = "16.0";
+        const APP_VERSION = "17.0";
+        const STORAGE_KEY_V17 = 'PERDIRFORMANCE_DNB_DATA_V17';
         const STORAGE_KEY_V16 = 'PERDIRFORMANCE_DNB_DATA_V16';
         const STORAGE_KEY_V15 = 'PERDIRFORMANCE_DNB_DATA_V15';
         const STORAGE_KEY_V14 = 'PERDIRFORMANCE_DNB_DATA_V14';
@@ -97,6 +98,18 @@
             recapMissions: { title: "CONVOCATION RÉCAPITULATIVE", subtitle: "DIPLÔME NATIONAL DU BREVET", intro: "Vous trouverez ci-dessous le récapitulatif de toutes vos missions pour la session (Surveillance, Couloirs, Réserve, Secrétariat, Correction).", consignes: "- Merci de vous présenter 15 minutes avant le début de chaque mission.\n- En cas d'absence, prévenir l'administration immédiatement." }
         };
 
+        // Helper : retourne l'intitulé d'une épreuve pour la correction (remplace "Sciences" par les disciplines scientifiques retenues)
+        const getCorrectionSubjectLabel = (subject) => {
+            if (!subject) return "";
+            if (subject.name && subject.name.toUpperCase().includes("SCIENCES") && Array.isArray(subject.disciplines) && subject.disciplines.length > 0) {
+                return subject.disciplines.join(" / ");
+            }
+            if (subject.name && (subject.name.toUpperCase().includes("FRANÇAIS") || subject.name.toUpperCase().includes("FRANCAIS"))) {
+                return "Français";
+            }
+            return subject.name;
+        };
+
         const calculateTimeSlots = (timeRangeStr) => {
             if (!timeRangeStr) return [];
             const parts = timeRangeStr.split('-').map(s => s.trim());
@@ -107,6 +120,24 @@
             let current = parseTime(startStr); const end = parseTime(endStr); const slots = [];
             while (current < end) { let next = current + 60; if (next > end) next = end; slots.push({ start: formatTime(current), end: formatTime(next), label: `${formatTime(current)} - ${formatTime(next)}` }); current = next; }
             return slots;
+        };
+
+        const getEffectiveRoomSlots = (subject, room, students, mode, customSlotsMap = {}) => {
+            const hasTT = students.some(s => s.roomId === room.id && s.isTT);
+            const activeTime = hasTT && subject.timeTT ? subject.timeTT : subject.time;
+            const customKey = `${subject.id}-${room.id}`;
+            if (customSlotsMap && customSlotsMap[customKey] && customSlotsMap[customKey].length > 0) {
+                return customSlotsMap[customKey].map(s => ({
+                    start: s.start,
+                    end: s.end,
+                    label: `${s.start} - ${s.end}`
+                }));
+            }
+            if (mode === 'with_rotation') {
+                return calculateTimeSlots(activeTime);
+            }
+            const { start, end } = parseTimeRange(activeTime);
+            return [{ start, end, label: activeTime }];
         };
 
         const parseTimeRange = (rangeStr) => {
@@ -383,7 +414,7 @@
             );
         };
 
-        const SurveillancePanel = ({ subjects, rooms, teachers, students, assignments, onAssignmentChange, schoolConfig, mode, setMode }) => {
+        const SurveillancePanel = ({ subjects, rooms, teachers, students, assignments, onAssignmentChange, customSlots, onCustomSlotsChange, onDeleteSlotAssignment, schoolConfig, mode, setMode }) => {
             const [selectedSubjectId, setSelectedSubjectId] = useState(subjects[0]?.id || null);
             const currentSubject = subjects.find(s => s.id === parseInt(selectedSubjectId));
 
@@ -422,12 +453,11 @@
                 doc.setFontSize(12); doc.setFont("helvetica", "normal");
                 doc.text(`Epreuve : ${subject.name}`, 105, 25, {align: 'center'});
                 doc.text(`Date : ${subject.date} - Horaire : ${subject.time}`, 105, 32, {align: 'center'});
-                doc.text(`Mode : ${mode === 'with_rotation' ? 'Rotations horaires' : 'Sans rotation'}`, 105, 39, {align: 'center'});
+                doc.text(`Mode : ${mode === 'with_rotation' ? 'Rotations horaires / EDT' : 'Sans rotation (sauf EDT personnalisé)'}`, 105, 39, {align: 'center'});
                 
                 const tableData = rooms.map(room => {
                     const hasTT = students.some(s => s.roomId === room.id && s.isTT);
-                    const activeTime = hasTT && subject.timeTT ? subject.timeTT : subject.time;
-                    const timeSlots = mode === 'with_rotation' ? calculateTimeSlots(activeTime) : [{ label: activeTime }];
+                    const timeSlots = getEffectiveRoomSlots(subject, room, students, mode, customSlots);
 
                     const details = timeSlots.map((slot, index) => {
                         const assignKey = `${subject.id}-${room.id}-${index}`;
@@ -444,13 +474,49 @@
                 doc.autoTable({ startY: 45, head: [['Salle', 'Surveillants Affectés']], body: tableData, theme: 'grid', headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.1, lineColor: [0, 0, 0] }, styles: { minCellHeight: 15, valign: 'middle', fontSize: 10, cellPadding: 4, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.1 }, columnStyles: { 0: { cellWidth: 40, fontStyle: 'bold' }, 1: { cellWidth: 'auto' } } });
             };
 
+            const handleSlotTimeChange = (room, currentSlots, slotIndex, field, newVal) => {
+                const customKey = `${currentSubject.id}-${room.id}`;
+                const updatedSlots = currentSlots.map((s, i) => i === slotIndex ? { ...s, [field]: newVal } : { start: s.start, end: s.end });
+                onCustomSlotsChange(customKey, updatedSlots);
+            };
+
+            const handleAddCustomSlot = (room, currentSlots) => {
+                const customKey = `${currentSubject.id}-${room.id}`;
+                const hasTT = students.some(s => s.roomId === room.id && s.isTT);
+                const activeTime = hasTT && currentSubject.timeTT ? currentSubject.timeTT : currentSubject.time;
+                const { start: examStart, end: examEnd } = parseTimeRange(activeTime);
+                const lastSlot = currentSlots[currentSlots.length - 1];
+                const newStart = lastSlot ? lastSlot.end : examStart;
+                let newEnd = examEnd;
+                if (timeToMinutes(newStart) >= timeToMinutes(examEnd)) {
+                    newEnd = minutesToTime(timeToMinutes(newStart) + 60);
+                }
+                const updatedSlots = [...currentSlots.map(s => ({ start: s.start, end: s.end })), { start: newStart, end: newEnd }];
+                onCustomSlotsChange(customKey, updatedSlots);
+            };
+
+            const handleRemoveCustomSlot = (room, currentSlots, slotIndex) => {
+                if (currentSlots.length <= 1) return;
+                const customKey = `${currentSubject.id}-${room.id}`;
+                const updatedSlots = currentSlots.filter((_, i) => i !== slotIndex).map(s => ({ start: s.start, end: s.end }));
+                onCustomSlotsChange(customKey, updatedSlots);
+                if (onDeleteSlotAssignment) onDeleteSlotAssignment(currentSubject.id, room.id, slotIndex, currentSlots.length);
+            };
+
+            const handleResetCustomSlots = (room) => {
+                const customKey = `${currentSubject.id}-${room.id}`;
+                onCustomSlotsChange(customKey, null);
+            };
+
+            const sortedTeachers = [...teachers].sort((a,b) => a.lastname.localeCompare(b.lastname));
+
             return (
                 <div className="space-y-6 animate-fade-in">
                     <Card title="Gestion des Surveillants en Salle" className="border-l-4 border-l-indigo-500">
                         <div className="flex flex-col md:flex-row gap-6 mb-6">
                             <div className="w-full md:w-1/3 space-y-4">
                                 <div className="bg-indigo-50/50 p-4 rounded-lg border border-indigo-100">
-                                    <label className="block text-sm font-bold text-indigo-900 mb-2">Mode d'organisation :</label>
+                                    <label className="block text-sm font-bold text-indigo-900 mb-2">Mode d'organisation par défaut :</label>
                                     <div className="space-y-2">
                                         <label className="flex items-center cursor-pointer"><input type="radio" name="surveillanceMode" checked={mode === 'with_rotation'} onChange={() => setMode('with_rotation')} className="form-radio text-indigo-600 focus:ring-indigo-500 h-4 w-4" /><span className="ml-2 text-sm text-slate-700">Avec rotations (Tranches d'1h)</span></label>
                                         <label className="flex items-center cursor-pointer"><input type="radio" name="surveillanceMode" checked={mode === 'no_rotation'} onChange={() => setMode('no_rotation')} className="form-radio text-indigo-600 focus:ring-indigo-500 h-4 w-4" /><span className="ml-2 text-sm text-slate-700">Sans rotation (Durée complète)</span></label>
@@ -469,22 +535,56 @@
                                 {currentSubject ? (
                                     <div className="space-y-3">
                                         <h4 className="font-bold text-slate-700 mb-2">Affectations pour {currentSubject.name}</h4>
-                                        <p className="text-xs text-slate-500 mb-4 bg-blue-50 p-2 rounded border border-blue-100">ℹ️ Les horaires s'adaptent automatiquement au Tiers-Temps (TT) si un élève concerné est dans la salle.</p>
+                                        <p className="text-xs text-slate-500 mb-4 bg-blue-50 p-2 rounded border border-blue-100">ℹ️ Vous pouvez ajuster les heures de début/fin de chaque créneau ou ajouter/supprimer des créneaux par salle selon l'EDT réel des professeurs, sans modifier les horaires généraux de l'épreuve.</p>
                                         {rooms.map(room => {
                                             const hasTT = students.some(s => s.roomId === room.id && s.isTT);
-                                            const activeTime = hasTT && currentSubject.timeTT ? currentSubject.timeTT : currentSubject.time;
-                                            const timeSlots = mode === 'with_rotation' ? calculateTimeSlots(activeTime) : [{ label: activeTime }];
+                                            const customKey = `${currentSubject.id}-${room.id}`;
+                                            const isCustomized = !!(customSlots && customSlots[customKey] && customSlots[customKey].length > 0);
+                                            const timeSlots = getEffectiveRoomSlots(currentSubject, room, students, mode, customSlots);
                                             return (
                                                 <div key={room.id} className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden mb-4">
-                                                    <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center"><span className="font-bold text-indigo-700 text-sm flex items-center gap-2">{room.name}{hasTT && <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200">Horaire TT</span>}</span><span className="text-[10px] text-slate-400 font-normal">{room.capacity} places</span></div>
+                                                    <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2">
+                                                        <span className="font-bold text-indigo-700 text-sm flex items-center gap-2">
+                                                            {room.name}
+                                                            {hasTT && <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded border border-rose-200">Horaire TT</span>}
+                                                            {isCustomized && <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200">EDT personnalisé</span>}
+                                                        </span>
+                                                        <div className="flex items-center gap-2">
+                                                            <button onClick={() => handleAddCustomSlot(room, timeSlots)} className="text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 px-2 py-1 rounded flex items-center font-medium transition-colors" title="Ajouter un créneau horaire pour cette salle">
+                                                                <Plus className="w-3 h-3 mr-1" /> Créneau
+                                                            </button>
+                                                            {isCustomized && (
+                                                                <button onClick={() => handleResetCustomSlots(room)} className="text-xs bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300 px-2 py-1 rounded flex items-center transition-colors" title="Revenir au découpage automatique">
+                                                                    <RotateCcw className="w-3 h-3 mr-1" /> Auto
+                                                                </button>
+                                                            )}
+                                                            <span className="text-[10px] text-slate-400 font-normal ml-1">{room.capacity} pl.</span>
+                                                        </div>
+                                                    </div>
                                                     <div className="p-3 space-y-3">
                                                         {timeSlots.map((slot, index) => {
                                                             const assignKey = `${currentSubject.id}-${room.id}-${index}`;
                                                             const currentAssigns = assignments[assignKey] || ["", ""];
                                                             return (
-                                                                <div key={index} className="flex flex-col sm:flex-row items-center gap-3 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-                                                                    <div className={`w-full sm:w-1/4 text-xs font-semibold px-2 py-1 rounded text-center ${hasTT ? 'bg-rose-50 text-rose-600 border border-rose-100' : 'bg-slate-100 text-slate-600'}`}>{slot.label}</div>
-                                                                    <div className="flex-1 w-full grid grid-cols-2 gap-2">{[0, 1].map(idx => (<select key={idx} className="text-xs p-2 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-200 outline-none" value={currentAssigns[idx] || ""} onChange={(e) => { const newAssigns = [...currentAssigns]; newAssigns[idx] = e.target.value; onAssignmentChange(assignKey, newAssigns); }}><option value="">-- Surv. {idx + 1} --</option>{teachers.map(t => (<option key={t.id} value={t.id}>{t.lastname} {t.firstname}</option>))}</select>))}</div>
+                                                                <div key={index} className="flex flex-col sm:flex-row items-center gap-2 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                                                                    <div className={`w-full sm:w-auto flex items-center justify-center gap-1 px-2 py-1 rounded border ${hasTT ? 'bg-rose-50/60 border-rose-200 text-rose-700' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+                                                                        <input type="time" value={slot.start} onChange={(e) => handleSlotTimeChange(room, timeSlots, index, 'start', e.target.value)} className="text-xs font-mono font-semibold bg-transparent focus:outline-none focus:ring-1 focus:ring-indigo-400 rounded px-0.5" title="Heure de début du surveillant" />
+                                                                        <span className="text-xs text-slate-400">-</span>
+                                                                        <input type="time" value={slot.end} onChange={(e) => handleSlotTimeChange(room, timeSlots, index, 'end', e.target.value)} className="text-xs font-mono font-semibold bg-transparent focus:outline-none focus:ring-1 focus:ring-indigo-400 rounded px-0.5" title="Heure de fin du surveillant" />
+                                                                    </div>
+                                                                    <div className="flex-1 w-full grid grid-cols-2 gap-2">
+                                                                        {[0, 1].map(idx => (
+                                                                            <select key={idx} className="text-xs p-2 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-200 outline-none" value={currentAssigns[idx] || ""} onChange={(e) => { const newAssigns = [...currentAssigns]; newAssigns[idx] = e.target.value; onAssignmentChange(assignKey, newAssigns); }}>
+                                                                                <option value="">-- Surv. {idx + 1} --</option>
+                                                                                {sortedTeachers.map(t => (<option key={t.id} value={t.id}>{t.lastname} {t.firstname}</option>))}
+                                                                            </select>
+                                                                        ))}
+                                                                    </div>
+                                                                    {timeSlots.length > 1 && (
+                                                                        <button onClick={() => handleRemoveCustomSlot(room, timeSlots, index)} className="text-slate-400 hover:text-rose-500 p-1 rounded transition-colors" title="Supprimer ce créneau">
+                                                                            <Trash2 className="w-4 h-4" />
+                                                                        </button>
+                                                                    )}
                                                                 </div>
                                                             );
                                                         })}
@@ -586,7 +686,7 @@
 
         const HelpPanel = () => (
             <div className="space-y-6 animate-fade-in">
-                <Card title="Mode d'Emploi - LOGI-DNB BLANC V16">
+                <Card title="Mode d'Emploi - LOGI-DNB BLANC V17">
                     <div className="text-slate-600 space-y-6">
                         <p className="text-lg font-light text-slate-800">Bienvenue dans l'outil d'organisation d'examen blanc.</p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -609,11 +709,12 @@
             const [secretariatMode, setSecretariatMode] = useState('blanc');
             const [secretariatTextBlanc, setSecretariatTextBlanc] = useState("A la fin de l'épreuve");
             const [secretariatTextFinal, setSecretariatTextFinal] = useState("Permanent");
-            const [selectedCorrectionSubject, setSelectedCorrectionSubject] = useState(null);
+            const [selectedCorrectionSubjectId, setSelectedCorrectionSubjectId] = useState(null);
             const [selectedTeachersForCorrection, setSelectedTeachersForCorrection] = useState([]);
             const [forceAllTeachersCorrection, setForceAllTeachersCorrection] = useState(false);
             const [teacherAssignments, setTeacherAssignments] = useState({}); 
             const [surveillanceAssignments, setSurveillanceAssignments] = useState({}); 
+            const [customSurveillanceSlots, setCustomSurveillanceSlots] = useState({});
             const [secretariatAssignments, setSecretariatAssignments] = useState({});
             const [corridorAssignments, setCorridorAssignments] = useState({});
             const [verifierAssignments, setVerifierAssignments] = useState({});
@@ -637,6 +738,11 @@
             const [now, setNow] = useState(new Date());
             const [lastSaved, setLastSaved] = useState(null);
             const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+            const selectedCorrectionSubject = useMemo(() => {
+                if (!selectedCorrectionSubjectId) return null;
+                return subjects.find(s => String(s.id) === String(selectedCorrectionSubjectId)) || null;
+            }, [subjects, selectedCorrectionSubjectId]);
             
             const showNotification = (msg, type = 'success') => { setNotification({ msg, type }); setTimeout(() => setNotification(null), 3000); };
 
@@ -646,14 +752,18 @@
             }, []);
 
             useEffect(() => {
-                const savedDataV16 = localStorage.getItem(STORAGE_KEY_V16);
-                if (savedDataV16) { loadData(JSON.parse(savedDataV16), "V16"); }
+                const savedDataV17 = localStorage.getItem(STORAGE_KEY_V17);
+                if (savedDataV17) { loadData(JSON.parse(savedDataV17), "V17"); }
                 else {
-                    const savedDataV15 = localStorage.getItem(STORAGE_KEY_V15);
-                    if (savedDataV15) { loadData(JSON.parse(savedDataV15), "Version antérieure"); showNotification("Données migrées vers la version 16.", "success"); }
+                    const savedDataV16 = localStorage.getItem(STORAGE_KEY_V16);
+                    if (savedDataV16) { loadData(JSON.parse(savedDataV16), "Version antérieure"); showNotification("Données migrées vers la version 17.", "success"); }
                     else {
-                        const savedDataV14 = localStorage.getItem(STORAGE_KEY_V14) || localStorage.getItem(STORAGE_KEY_V13);
-                        if (savedDataV14) { loadData(JSON.parse(savedDataV14), "Version antérieure"); showNotification("Données migrées vers la version 16.", "success"); }
+                        const savedDataV15 = localStorage.getItem(STORAGE_KEY_V15);
+                        if (savedDataV15) { loadData(JSON.parse(savedDataV15), "Version antérieure"); showNotification("Données migrées vers la version 17.", "success"); }
+                        else {
+                            const savedDataV14 = localStorage.getItem(STORAGE_KEY_V14) || localStorage.getItem(STORAGE_KEY_V13);
+                            if (savedDataV14) { loadData(JSON.parse(savedDataV14), "Version antérieure"); showNotification("Données migrées vers la version 17.", "success"); }
+                        }
                     }
                 }
                 setIsDataLoaded(true);
@@ -674,7 +784,7 @@
                     if (data.subjects && Array.isArray(data.subjects) && data.subjects.length > 0) {
                         setSubjects(data.subjects.map(s => ({ ...s, id: parseInt(s.id) || s.id || Date.now(), name: s.name || "Épreuve", date: s.date || "", time: s.time || "00:00 - 00:00", timeTT: s.timeTT || s.time || "00:00 - 00:00", disciplines: Array.isArray(s.disciplines) ? s.disciplines : [] })));
                     }
-                    setTeacherAssignments(data.teacherAssignments || {}); setSurveillanceAssignments(data.surveillanceAssignments || {}); setSecretariatAssignments(data.secretariatAssignments || {}); setCorridorAssignments(data.corridorAssignments || {}); setVerifierAssignments(data.verifierAssignments || {}); setReserveAssignments(data.reserveAssignments || {});
+                    setTeacherAssignments(data.teacherAssignments || {}); setSurveillanceAssignments(data.surveillanceAssignments || {}); setCustomSurveillanceSlots(data.customSurveillanceSlots || {}); setSecretariatAssignments(data.secretariatAssignments || {}); setCorridorAssignments(data.corridorAssignments || {}); setVerifierAssignments(data.verifierAssignments || {}); setReserveAssignments(data.reserveAssignments || {});
                     if (data.surveillanceMode) setSurveillanceMode(data.surveillanceMode);
                     if (data.secretariatMode) setSecretariatMode(data.secretariatMode);
                     if (data.secretariatTextBlanc) setSecretariatTextBlanc(data.secretariatTextBlanc);
@@ -696,8 +806,8 @@
                 if (!isDataLoaded) return;
                 
                 try {
-                    const dataToSave = { version: APP_VERSION, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, secretariatMode, secretariatTextBlanc, secretariatTextFinal, docTemplates, isAnonymityLocked, timestamp: new Date().toISOString() };
-                    localStorage.setItem(STORAGE_KEY_V16, JSON.stringify(dataToSave));
+                    const dataToSave = { version: APP_VERSION, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, customSurveillanceSlots, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, secretariatMode, secretariatTextBlanc, secretariatTextFinal, docTemplates, isAnonymityLocked, timestamp: new Date().toISOString() };
+                    localStorage.setItem(STORAGE_KEY_V17, JSON.stringify(dataToSave));
                     setLastSaved(new Date());
                 } catch (e) {
                     console.error("Erreur de sauvegarde locale :", e);
@@ -705,7 +815,7 @@
                         showNotification("Erreur de sauvegarde : Espace saturé. Réduisez la taille du logo.", "error");
                     }
                 }
-            }, [isDataLoaded, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, secretariatMode, secretariatTextBlanc, secretariatTextFinal, docTemplates, isAnonymityLocked]);
+            }, [isDataLoaded, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, customSurveillanceSlots, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, secretariatMode, secretariatTextBlanc, secretariatTextFinal, docTemplates, isAnonymityLocked]);
 
             const getRoomOccupancy = (roomId) => students.filter(s => s.roomId === roomId).length;
             const openModal = (title, message, action) => setModalConfig({ isOpen: true, title, message, onConfirm: action });
@@ -726,11 +836,47 @@
             const handleAddRoom = () => { if (newRoom.name && newRoom.capacity > 0) { setRooms([...rooms, { id: `room-manual-${Date.now()}`, name: newRoom.name, capacity: newRoom.capacity, corridor: newRoom.corridor || '', type: 'standard' }]); setNewRoom({ name: '', capacity: 20, corridor: '' }); showNotification("Salle ajoutée !"); } else { showNotification("Nom et capacité requis", "error"); } };
             
             const isTeacherForSubject = (teacher, subject) => {
-                if (!teacher.subject) return false; const tSub = teacher.subject.toUpperCase().trim(); const sName = subject.name.toUpperCase().trim();
-                if (sName.includes("MATH") && tSub.includes("MATH")) return true; if (sName.includes("FRANÇAIS") && (tSub.includes("FRANÇAIS") || tSub.includes("FRANCAIS") || tSub.includes("LETTRE"))) return true; if ((sName.includes("HISTOIRE") || sName.includes("GEO") || sName.includes("HG")) && (tSub.includes("HIST") || tSub.includes("GEO") || tSub.includes("HG") || tSub.includes("EMC"))) return true; if (sName.includes("SCIENCES")) { const disciplines = subject.disciplines || []; if (tSub.includes("SCIENCE") || tSub.includes("SVT") || tSub.includes("PHY") || tSub.includes("TECHNO") || tSub.includes("CHIMIE")) return true; } return false;
+                if (!teacher.subject) return false;
+                const tSub = teacher.subject.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+                const sName = subject.name.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+                if (sName.includes("MATH") && tSub.includes("MATH")) return true;
+                if (sName.includes("FRANCAIS") && (tSub.includes("FRANCAIS") || tSub.includes("LETTRE"))) return true;
+                if ((sName.includes("HISTOIRE") || sName.includes("GEO") || sName.includes("HG")) && (tSub.includes("HIST") || tSub.includes("GEO") || tSub.includes("HG") || tSub.includes("EMC"))) return true;
+                if (sName.includes("SCIENCES")) {
+                    const disciplines = subject.disciplines || [];
+                    if (disciplines.length > 0) {
+                        return disciplines.some(d => {
+                            const dNorm = d.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                            if (dNorm.includes("PHYSIQUE") || dNorm.includes("CHIMIE")) {
+                                return tSub.includes("PHY") || tSub.includes("CHIM") || tSub.includes("PC") || tSub.includes("SPC");
+                            }
+                            if (dNorm.includes("SVT")) {
+                                return tSub.includes("SVT") || tSub.includes("VIE") || tSub.includes("TERRE") || tSub.includes("BIO");
+                            }
+                            if (dNorm.includes("TECHNO")) {
+                                return tSub.includes("TECHNO");
+                            }
+                            return false;
+                        });
+                    }
+                    if (tSub.includes("SCIENCE") || tSub.includes("SVT") || tSub.includes("PHY") || tSub.includes("TECHNO") || tSub.includes("CHIMIE")) return true;
+                }
+                return false;
             };
 
-            const handleSubjectSelectForCorrection = (subjectId) => { const subject = subjects.find(s => s.id === parseInt(subjectId)); setSelectedCorrectionSubject(subject); const relevantTeachers = teachers.filter(t => isTeacherForSubject(t, subject)); setSelectedTeachersForCorrection(relevantTeachers.map(t => t.id)); };
+            const handleSubjectSelectForCorrection = (subjectId) => {
+                if (!subjectId) {
+                    setSelectedCorrectionSubjectId(null);
+                    setSelectedTeachersForCorrection([]);
+                    return;
+                }
+                setSelectedCorrectionSubjectId(subjectId);
+                const subject = subjects.find(s => String(s.id) === String(subjectId));
+                if (subject) {
+                    const relevantTeachers = teachers.filter(t => isTeacherForSubject(t, subject));
+                    setSelectedTeachersForCorrection(relevantTeachers.map(t => t.id));
+                }
+            };
 
             const distributeCopies = () => {
                 if (!selectedCorrectionSubject) return; const activeTeachers = teachers.filter(t => selectedTeachersForCorrection.includes(t.id)); if (activeTeachers.length === 0) { showNotification("Aucun professeur !", "error"); return; }
@@ -776,6 +922,26 @@
                     setSchoolConfig(prev => ({ ...prev, logoUrl: dataUrl, logoRatio: ratio })); 
                 });
             };
+
+            const handleCustomSlotsChange = (customKey, newSlots) => {
+                setCustomSurveillanceSlots(prev => {
+                    const next = { ...prev };
+                    if (!newSlots) delete next[customKey];
+                    else next[customKey] = newSlots;
+                    return next;
+                });
+            };
+
+            const handleDeleteSlotAssignment = (subjectId, roomId, removedIndex, oldCount) => {
+                setSurveillanceAssignments(prev => {
+                    const next = { ...prev };
+                    for (let i = removedIndex; i < oldCount - 1; i++) {
+                        next[`${subjectId}-${roomId}-${i}`] = next[`${subjectId}-${roomId}-${i + 1}`] || ["", ""];
+                    }
+                    delete next[`${subjectId}-${roomId}-${oldCount - 1}`];
+                    return next;
+                });
+            };
             const handleStampUpload = (e) => { 
                 processImageForStorage(e.target.files[0], (dataUrl, ratio) => {
                     setSchoolConfig(prev => ({ ...prev, stampUrl: dataUrl, stampRatio: ratio })); 
@@ -788,9 +954,37 @@
 
             const handleUpdateStudent = (id, field, value) => { setStudents(students.map(s => s.id === id ? { ...s, [field]: value } : s)); };
             const handleDeleteStudent = (id) => { openModal("Suppression", "Voulez-vous vraiment supprimer cet élève ?", () => { setStudents(prev => prev.filter(s => s.id !== id)); }); };
+            const handleDeleteAllStudents = () => {
+                if (students.length === 0) return;
+                openModal(
+                    "Supprimer tous les élèves",
+                    `Voulez-vous vraiment supprimer la totalité des ${students.length} élève(s) ?\nLes salles, les professeurs et la configuration des épreuves seront conservés.`,
+                    () => {
+                        setStudents([]);
+                        setTeacherAssignments({});
+                        showNotification("Tous les élèves ont été supprimés.", "success");
+                    }
+                );
+            };
             const handleDeleteTeacher = (id) => { openModal("Suppression", "Voulez-vous vraiment supprimer ce professeur ?", () => { setTeachers(prev => prev.filter(t => t.id !== id)); }); };
             const handleUpdateRoom = (id, field, value) => { setRooms(rooms.map(r => r.id === id ? { ...r, [field]: value } : r)); };
             const handleUpdateTeacherField = (id, field, value) => { setTeachers(teachers.map(t => t.id === id ? { ...t, [field]: value } : t)); };
+            const handleMoveTeacher = (index, direction) => {
+                const newTeachers = [...teachers];
+                if (index + direction < 0 || index + direction >= newTeachers.length) return;
+                const temp = newTeachers[index];
+                newTeachers[index] = newTeachers[index + direction];
+                newTeachers[index + direction] = temp;
+                setTeachers(newTeachers);
+            };
+            const handleSortTeachersAlpha = () => {
+                setTeachers(prev => [...prev].sort((a, b) => {
+                    const cmpNom = (a.lastname || '').localeCompare(b.lastname || '', 'fr', { sensitivity: 'base' });
+                    if (cmpNom !== 0) return cmpNom;
+                    return (a.firstname || '').localeCompare(b.firstname || '', 'fr', { sensitivity: 'base' });
+                }));
+                showNotification("Professeurs triés par ordre alphabétique !");
+            };
 
             const handleAddTeacher = () => { if (newTeacher.lastname && newTeacher.subject) { setTeachers([...teachers, { id: `prof-manual-${Date.now()}`, civ: newTeacher.civ, lastname: newTeacher.lastname.toUpperCase(), firstname: newTeacher.firstname, subject: newTeacher.subject }]); setNewTeacher({ civ: 'M.', lastname: '', firstname: '', subject: '' }); showNotification("Professeur ajouté !"); } };
 
@@ -1023,8 +1217,13 @@
             const resetDistribution = () => { openModal("Réinitialisation", "Vider les salles ?", () => { setStudents(prev => prev.map(s => ({ ...s, roomId: null }))); showNotification("Salles vidées !"); }); };
             
             const handleSaveWork = () => {
-                const defaultName = `dnb_backup_v16_${new Date().toISOString().slice(0,10)}`;
-                setInputModalConfig({ isOpen: true, title: "Sauvegarder", message: "Nommez votre fichier :", defaultValue: defaultName, onConfirm: (fileName) => { const finalName = fileName.trim() ? (fileName.endsWith('.json') ? fileName : `${fileName}.json`) : `${defaultName}.json`; const data = { version: APP_VERSION, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, secretariatMode, secretariatTextBlanc, secretariatTextFinal, docTemplates, isAnonymityLocked, timestamp: new Date().toISOString() }; const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = finalName; document.body.appendChild(link); link.click(); document.body.removeChild(link); showNotification(`Sauvegardé : ${finalName}`, "success"); closeInputModal(); } });
+                const currentDate = new Date();
+                const day = String(currentDate.getDate()).padStart(2, '0');
+                const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+                const year = currentDate.getFullYear();
+                const hour = `${String(currentDate.getHours()).padStart(2, '0')}h${String(currentDate.getMinutes()).padStart(2, '0')}`;
+                const defaultName = `LogiDnb_${day}${month}${year}_${hour}`;
+                setInputModalConfig({ isOpen: true, title: "Sauvegarder", message: "Nommez votre fichier :", defaultValue: defaultName, onConfirm: (fileName) => { const finalName = fileName.trim() ? (fileName.endsWith('.json') ? fileName : `${fileName}.json`) : `${defaultName}.json`; const data = { version: APP_VERSION, schoolConfig, rooms, students, teachers, subjects, teacherAssignments, surveillanceAssignments, customSurveillanceSlots, secretariatAssignments, corridorAssignments, verifierAssignments, reserveAssignments, surveillanceMode, secretariatMode, secretariatTextBlanc, secretariatTextFinal, docTemplates, isAnonymityLocked, timestamp: new Date().toISOString() }; const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = finalName; document.body.appendChild(link); link.click(); document.body.removeChild(link); showNotification(`Sauvegardé : ${finalName}`, "success"); closeInputModal(); } });
             };
 
             const handleLoadWork = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => { try { const data = JSON.parse(evt.target.result); loadData(data, "Fichier"); } catch (err) { showNotification("Erreur lecture fichier", "error"); } finally { e.target.value = ''; } }; reader.readAsText(file); };
@@ -1040,9 +1239,7 @@
 
                 subjects.forEach(sub => {
                     rooms.forEach(room => {
-                        const hasTT = students.some(s => s.roomId === room.id && s.isTT);
-                        const activeTime = hasTT && sub.timeTT ? sub.timeTT : sub.time;
-                        const timeSlots = surveillanceMode === 'with_rotation' ? calculateTimeSlots(activeTime) : [{ label: activeTime }];
+                        const timeSlots = getEffectiveRoomSlots(sub, room, students, surveillanceMode, customSurveillanceSlots);
                         
                         timeSlots.forEach((slot, index) => {
                             const assignKey = `${sub.id}-${room.id}-${index}`;
@@ -1080,7 +1277,7 @@
                 });
 
                 return Object.values(hoursMap).sort((a, b) => b.totalMinutes - a.totalMinutes);
-            }, [isHoursModalOpen, teachers, subjects, rooms, students, surveillanceAssignments, corridorAssignments, verifierAssignments, reserveAssignments, secretariatAssignments, surveillanceMode]);
+            }, [isHoursModalOpen, teachers, subjects, rooms, students, surveillanceAssignments, customSurveillanceSlots, corridorAssignments, verifierAssignments, reserveAssignments, secretariatAssignments, surveillanceMode]);
 
             const exportHoursPDF = () => {
                 const { jsPDF } = window.jspdf;
@@ -1514,25 +1711,31 @@
                         const anonymizedStudents = students.filter(s => s.anonymousId).sort((a, b) => (a.lastname + a.firstname).localeCompare(b.lastname + b.firstname));
 
                         subjectsToPrint.forEach(subject => {
-                            const assignments = teacherAssignments[subject.id]; const subNameUpper = subject.name.toUpperCase(); const isHGEMC = subNameUpper.includes("HISTOIRE") || subNameUpper.includes("GEO") || subNameUpper.includes("HG") || subNameUpper.includes("EMC"); const isSciences = subNameUpper.includes("SCIENCE") || subNameUpper.includes("SVT") || subNameUpper.includes("PHY") || subNameUpper.includes("TECHNO");
+                            const assignments = teacherAssignments[subject.id]; const subNameUpper = subject.name.toUpperCase(); const isSciences = subNameUpper.includes("SCIENCE") || subNameUpper.includes("SVT") || subNameUpper.includes("PHY") || subNameUpper.includes("TECHNO");
+                            const correctionSubLabel = getCorrectionSubjectLabel(subject);
 
                             assignments.forEach((assign) => {
                                 if (!isFirstPage) doc.addPage();
                                 isFirstPage = false;
-                                let y = addHeader(`LISTE DE CONTRÔLE DE CORRECTION`, `${subject.name}`); y += 10;
+                                let y = addHeader(`LISTE DE CONTRÔLE DE CORRECTION`, `${correctionSubLabel}`); y += 10;
                                 doc.setFontSize(11); doc.setFont("helvetica", "bold"); doc.setTextColor(0); doc.text(`Correcteur : ${assign.teacherName}`, 14, y); doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.text(`Lot : ${assign.startAnonym} à ${assign.endAnonym} (${assign.count} copies)`, 14, y + 6); y += 15;
                                 
                                 const batchStudents = anonymizedStudents.slice(assign.startRank - 1, assign.endRank); let headRow, bodyData, colStyles;
                                 
-                                if (isHGEMC) { headRow = [['N° Anonymat', 'Note HG', 'Note EMC', 'TOTAL', 'Observations / Appréciations']]; bodyData = batchStudents.map(s => [s.anonymousId, "", "", "", ""]); colStyles = { 0: { cellWidth: 30, halign: 'center' }, 1: { cellWidth: 20, halign: 'center' }, 2: { cellWidth: 20, halign: 'center' }, 3: { cellWidth: 20, halign: 'center', fontStyle: 'bold' }, 4: { cellWidth: 'auto' } }; } 
-                                else if (isSciences) { headRow = [['N° Anonymat', 'SCIENCE 1', 'SCIENCE 2', 'TOTAL', 'Observations / Appréciations']]; bodyData = batchStudents.map(s => [s.anonymousId, "", "", "", ""]); colStyles = { 0: { cellWidth: 30, halign: 'center' }, 1: { cellWidth: 20, halign: 'center' }, 2: { cellWidth: 20, halign: 'center' }, 3: { cellWidth: 20, halign: 'center', fontStyle: 'bold' }, 4: { cellWidth: 'auto' } }; } 
+                                if (isSciences) {
+                                    const sci1 = subject.disciplines?.[0] || 'SCIENCE 1';
+                                    const sci2 = subject.disciplines?.[1] || 'SCIENCE 2';
+                                    headRow = [['N° Anonymat', sci1, sci2, 'TOTAL', 'Observations / Appréciations']];
+                                    bodyData = batchStudents.map(s => [s.anonymousId, "", "", "", ""]);
+                                    colStyles = { 0: { cellWidth: 30, halign: 'center' }, 1: { cellWidth: 25, halign: 'center' }, 2: { cellWidth: 25, halign: 'center' }, 3: { cellWidth: 20, halign: 'center', fontStyle: 'bold' }, 4: { cellWidth: 'auto' } };
+                                } 
                                 else { headRow = [['N° Anonymat', 'Note', 'Observations / Appréciations']]; bodyData = batchStudents.map(s => [s.anonymousId, "", ""]); colStyles = { 0: { cellWidth: 40, halign: 'center' }, 1: { cellWidth: 30, halign: 'center' }, 2: { cellWidth: 'auto' } }; }
                                 
                                 doc.autoTable({ startY: y, head: headRow, body: bodyData, theme: 'grid', headStyles: { fillColor: [50, 50, 50], textColor: [255, 255, 255] }, columnStyles: colStyles, styles: { minCellHeight: 10, fontSize: 10, lineColor: [150, 150, 150] }, margin: { bottom: 20 } });
                                 const finalY = doc.lastAutoTable.finalY + 20; doc.setFontSize(10); doc.text("Signature du correcteur :", 130, finalY);
                             });
                         });
-                        doc.save(docType === 'listes_correction_global' ? 'listes_correction_globales.pdf' : `listes_correction_${selectedCorrectionSubject?.name || 'epreuve'}.pdf`);
+                        doc.save(docType === 'listes_correction_global' ? 'listes_correction_globales.pdf' : `listes_correction_${selectedCorrectionSubject ? getCorrectionSubjectLabel(selectedCorrectionSubject).replace(/[^a-zA-Z0-9_-]/g, '_') : 'epreuve'}.pdf`);
                     } else if (docType === 'convocations') {
                         const tpl = docTemplates.student; const sortedStudents = [...students].sort((a, b) => a.lastname.localeCompare(b.lastname));
                         sortedStudents.forEach((student, index) => {
@@ -1554,8 +1757,8 @@
                          const tpl = docTemplates.surveillant; const assignmentsByTeacher = {};
                         subjects.forEach(sub => {
                             rooms.forEach(room => {
-                                const hasTT = students.some(s => s.roomId === room.id && s.isTT); const activeTime = hasTT && sub.timeTT ? sub.timeTT : sub.time;
-                                const timeSlots = surveillanceMode === 'with_rotation' ? calculateTimeSlots(activeTime) : [{ label: activeTime }];
+                                const hasTT = students.some(s => s.roomId === room.id && s.isTT);
+                                const timeSlots = getEffectiveRoomSlots(sub, room, students, surveillanceMode, customSurveillanceSlots);
                                 timeSlots.forEach((slot, slotIndex) => {
                                     const assignKey = `${sub.id}-${room.id}-${slotIndex}`; const assignedTeacherIds = surveillanceAssignments[assignKey];
                                     if (assignedTeacherIds && assignedTeacherIds.length > 0) {
@@ -1671,8 +1874,7 @@
                         subjects.forEach(sub => {
                             rooms.forEach(room => {
                                 const hasTT = students.some(s => s.roomId === room.id && s.isTT);
-                                const activeTime = hasTT && sub.timeTT ? sub.timeTT : sub.time;
-                                const timeSlots = surveillanceMode === 'with_rotation' ? calculateTimeSlots(activeTime) : [{ label: activeTime }];
+                                const timeSlots = getEffectiveRoomSlots(sub, room, students, surveillanceMode, customSurveillanceSlots);
                                 timeSlots.forEach((slot, slotIndex) => {
                                     const assignKey = `${sub.id}-${room.id}-${slotIndex}`;
                                     const assignedIds = surveillanceAssignments[assignKey] || [];
@@ -2002,7 +2204,24 @@
                             { type: 'rooms', label: 'Salles', icon: LayoutDashboard, data: rooms, color: 'emerald' },
                             { type: 'teachers', label: 'Professeurs', icon: Briefcase, data: teachers, color: 'orange' }
                         ].map(section => (
-                            <Card key={section.type} title={`${section.label} (${section.data.length})`} className="h-full flex flex-col">
+                            <Card
+                                key={section.type}
+                                title={`${section.label} (${section.data.length})`}
+                                className="h-full flex flex-col"
+                                headerAction={
+                                    section.type === 'students' && students.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={handleDeleteAllStudents}
+                                            className="px-2.5 py-1 text-xs rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 font-medium transition-colors flex items-center gap-1"
+                                            title="Supprimer tous les élèves tout en conservant les salles et les professeurs"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            Tout supprimer
+                                        </button>
+                                    )
+                                }
+                            >
                                 <div className="flex flex-col gap-3 mb-4">
                                     <label className={`flex items-center justify-center w-full py-3 border-2 border-dashed border-${section.color}-200 rounded-lg bg-${section.color}-50 text-${section.color}-700 cursor-pointer hover:bg-${section.color}-100 transition-colors`}>
                                         <Upload className="w-5 h-5 mr-2" /> Import Excel
@@ -2089,7 +2308,22 @@
                             </div>
                         </Card>
 
-                        <Card title="Aperçu & Configuration Professeurs" className="max-h-[32rem] overflow-hidden flex flex-col">
+                        <Card
+                            title="Aperçu & Configuration Professeurs"
+                            className="max-h-[32rem] overflow-hidden flex flex-col"
+                            headerAction={
+                                teachers.length > 1 && (
+                                    <button
+                                        type="button"
+                                        onClick={handleSortTeachersAlpha}
+                                        className="px-2.5 py-1 text-xs rounded-lg border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 font-medium transition-colors"
+                                        title="Classer les professeurs par ordre alphabétique (A → Z)"
+                                    >
+                                        Tri A → Z
+                                    </button>
+                                )
+                            }
+                        >
                             <div className="overflow-y-auto pr-2 mb-4">
                                 <table className="min-w-full text-sm">
                                     <thead className="bg-slate-50 sticky top-0 z-10">
@@ -2102,13 +2336,35 @@
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {teachers.length > 0 ? teachers.map((t) => (
+                                        {teachers.length > 0 ? teachers.map((t, index) => (
                                             <tr key={t.id} className="hover:bg-slate-50">
                                                 <td className="px-2 py-2"><select value={t.civ} onChange={(e) => handleUpdateTeacherField(t.id, 'civ', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-sky-500 focus:outline-none transition-colors font-medium text-slate-700 text-xs"><option value="M.">M.</option><option value="Mme">Mme</option></select></td>
                                                 <td className="px-2 py-2"><input type="text" value={t.lastname} onChange={(e) => handleUpdateTeacherField(t.id, 'lastname', e.target.value.toUpperCase())} className="w-full bg-transparent border-b border-transparent focus:border-sky-500 focus:outline-none transition-colors font-bold text-slate-700 text-xs uppercase"/></td>
                                                 <td className="px-2 py-2"><input type="text" value={t.firstname} onChange={(e) => handleUpdateTeacherField(t.id, 'firstname', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-sky-500 focus:outline-none transition-colors font-medium text-slate-700 text-xs capitalize"/></td>
                                                 <td className="px-2 py-2"><input type="text" value={t.subject} onChange={(e) => handleUpdateTeacherField(t.id, 'subject', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-sky-500 focus:outline-none transition-colors font-medium text-slate-700 text-xs"/></td>
-                                                <td className="px-2 py-2 text-right"><button onClick={() => handleDeleteTeacher(t.id)} className="text-rose-400 hover:text-rose-600 p-1 rounded-full hover:bg-rose-50 transition-colors"><Trash2 className="w-4 h-4" /></button></td>
+                                                <td className="px-2 py-2 text-right">
+                                                    <div className="inline-flex items-center gap-1">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleMoveTeacher(index, -1)}
+                                                            disabled={index === 0}
+                                                            className="text-slate-500 hover:text-sky-600 disabled:opacity-20 p-1 rounded hover:bg-sky-50 transition-colors"
+                                                            title="Monter"
+                                                        >
+                                                            <ArrowUp className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleMoveTeacher(index, 1)}
+                                                            disabled={index === teachers.length - 1}
+                                                            className="text-slate-500 hover:text-sky-600 disabled:opacity-20 p-1 rounded hover:bg-sky-50 transition-colors"
+                                                            title="Descendre"
+                                                        >
+                                                            <ArrowDown className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button onClick={() => handleDeleteTeacher(t.id)} className="text-rose-400 hover:text-rose-600 p-1 rounded-full hover:bg-rose-50 transition-colors" title="Supprimer"><Trash2 className="w-4 h-4" /></button>
+                                                    </div>
+                                                </td>
                                             </tr>
                                         )) : (
                                             <tr><td colSpan="5" className="text-center py-4 text-slate-400 italic">Aucun professeur configuré.</td></tr>
@@ -2196,6 +2452,11 @@
 
             const renderCorrection = () => {
                 const currentAssignments = selectedCorrectionSubject ? (teacherAssignments[selectedCorrectionSubject.id] || []) : [];
+                const correctionSubjects = subjects.filter((sub, idx, arr) => {
+                    const isFrench = sub.name && (sub.name.toUpperCase().includes("FRANÇAIS") || sub.name.toUpperCase().includes("FRANCAIS"));
+                    if (!isFrench) return true;
+                    return arr.findIndex(s => s.name && (s.name.toUpperCase().includes("FRANÇAIS") || s.name.toUpperCase().includes("FRANCAIS"))) === idx;
+                });
                 
                 const getVisibleTeachers = () => {
                     if (!selectedCorrectionSubject) return [];
@@ -2215,9 +2476,9 @@
                                 <div className="space-y-4">
                                     <label className="block text-sm font-bold text-slate-700">1. Choisir l'Épreuve</label>
                                     <select className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-sky-200 outline-none" onChange={(e) => handleSubjectSelectForCorrection(e.target.value)} value={selectedCorrectionSubject?.id || ''}>
-                                        <option value="">-- Sélectionner --</option>{subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                        <option value="">-- Sélectionner --</option>{correctionSubjects.map(s => <option key={s.id} value={s.id}>{getCorrectionSubjectLabel(s)}</option>)}
                                     </select>
-                                    {selectedCorrectionSubject && <div className="bg-sky-50 p-3 rounded border border-sky-100 text-sm text-sky-800"><strong>{students.filter(s => s.anonymousId).length}</strong> copies à corriger.</div>}
+                                    {selectedCorrectionSubject && <div className="bg-sky-50 p-3 rounded border border-sky-100 text-sm text-sky-800"><strong>{students.filter(s => s.anonymousId).length}</strong> copies à corriger{selectedCorrectionSubject.name.toUpperCase().includes("SCIENCES") && selectedCorrectionSubject.disciplines?.length > 0 ? ` (${selectedCorrectionSubject.disciplines.join(' / ')})` : ''}.</div>}
                                 </div>
 
                                 <div className="md:col-span-2 space-y-4">
@@ -2245,7 +2506,7 @@
 
                             {currentAssignments.length > 0 && (
                                 <div className="mt-8">
-                                    <h4 className="font-bold text-slate-700 mb-4 flex justify-between items-center"><span>3. Lots Attribués</span><Button onClick={() => generatePDF('listes_correction_detail')} variant="secondary" icon={Printer} className="text-xs">Imprimer Listes de Contrôle</Button></h4>
+                                    <h4 className="font-bold text-slate-700 mb-4 flex justify-between items-center"><span>3. Lots Attribués ({getCorrectionSubjectLabel(selectedCorrectionSubject)})</span><Button onClick={() => generatePDF('listes_correction_detail')} variant="secondary" icon={Printer} className="text-xs">Imprimer Listes de Contrôle</Button></h4>
                                     <div className="overflow-x-auto border border-slate-200 rounded-lg">
                                         <table className="w-full text-sm text-left"><thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200"><tr><th className="p-3">Correcteur</th><th className="p-3 w-24">Nb Copies</th><th className="p-3">Premier N°</th><th className="p-3">Dernier N°</th></tr></thead>
                                             <tbody className="divide-y divide-slate-100">
@@ -2312,9 +2573,9 @@
                                 <h1 className="text-xl text-white flex items-center hidden sm:flex">
                                     <span className="text-cyan-200 font-extrabold tracking-tight">PERDIR</span><span className="font-light tracking-wide">FORMANCE</span>
                                     <span className="opacity-50 mx-3">|</span>
-                                    <span className="font-bold">LOGI-DNB BLANC V16</span>
+                                    <span className="font-bold">LOGI-DNB BLANC V17</span>
                                 </h1>
-                                <h1 className="text-xl font-bold text-white sm:hidden">LOGI-DNB V16</h1>
+                                <h1 className="text-xl font-bold text-white sm:hidden">LOGI-DNB V17</h1>
                             </div>
                             <div className="text-sm text-sky-100 hidden md:flex flex-col items-end">
                                 <div className="font-medium capitalize text-[13px]">
@@ -2351,14 +2612,14 @@
                         {activeTab === 'config' && renderConfig()}
                         {activeTab === 'data' && renderData()}
                         {activeTab === 'repartition' && renderRepartition()}
-                        {activeTab === 'surveillance' && <SurveillancePanel subjects={subjects} rooms={rooms} teachers={teachers} students={students} assignments={surveillanceAssignments} onAssignmentChange={(k, v) => setSurveillanceAssignments(prev => ({...prev, [k]: v}))} schoolConfig={schoolConfig} mode={surveillanceMode} setMode={setSurveillanceMode} />}
+                        {activeTab === 'surveillance' && <SurveillancePanel subjects={subjects} rooms={rooms} teachers={teachers} students={students} assignments={surveillanceAssignments} onAssignmentChange={(k, v) => setSurveillanceAssignments(prev => ({...prev, [k]: v}))} customSlots={customSurveillanceSlots} onCustomSlotsChange={handleCustomSlotsChange} onDeleteSlotAssignment={handleDeleteSlotAssignment} schoolConfig={schoolConfig} mode={surveillanceMode} setMode={setSurveillanceMode} />}
                         {activeTab === 'annexes' && <AnnexesPanel subjects={subjects} rooms={rooms} teachers={teachers} corridorAssignments={corridorAssignments} verifierAssignments={verifierAssignments} reserveAssignments={reserveAssignments} onCorridorChange={(k, v) => setCorridorAssignments(prev => ({...prev, [k]: v}))} onVerifierChange={(k, v) => setVerifierAssignments(prev => ({...prev, [k]: v}))} onReserveChange={(k, v) => setReserveAssignments(prev => ({...prev, [k]: v}))} />}
                         {activeTab === 'secretariat' && <SecretariatPanel subjects={subjects} rooms={rooms} teachers={teachers} assignments={secretariatAssignments} onAssignmentChange={(sid, data) => setSecretariatAssignments(prev => ({...prev, [sid]: data}))} secretariatMode={secretariatMode} setSecretariatMode={setSecretariatMode} secretariatTextBlanc={secretariatTextBlanc} setSecretariatTextBlanc={setSecretariatTextBlanc} secretariatTextFinal={secretariatTextFinal} setSecretariatTextFinal={setSecretariatTextFinal} />}
                         {activeTab === 'correction' && renderCorrection()}
                         {activeTab === 'documents' && renderDocuments()}
                         {activeTab === 'help' && <HelpPanel />}
                     </main>
-                    <footer className="bg-white border-t py-8 text-center text-slate-400 text-sm">LOGI-DNB BLANC V16 proposé par Yannis CHRISTON à l'aide de l'IA Générative</footer>
+                    <footer className="bg-white border-t py-8 text-center text-slate-400 text-sm">LOGI-DNB BLANC V17 proposé par Yannis CHRISTON à l'aide de l'IA Générative</footer>
                 </div>
             );
         };
